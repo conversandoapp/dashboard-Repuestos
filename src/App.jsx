@@ -71,9 +71,9 @@ export default function SalesDashboard() {
 
     const totalLeads = salesData.length;
     const qualifiedLeads = salesData.filter(row => 
-      row['¿Cliente calificado?'] === 'Sí' || 
-      row['¿Cliente calificado?'] === 'SI' || 
-      row['¿Cliente calificado?'] === 'Si'
+      row['¿Lead calificado?'] === 'Sí' || 
+      row['¿Lead calificado?'] === 'SI' || 
+      row['¿Lead calificado?'] === 'Si'
     ).length;
     
     const reservations = salesData.filter(row => 
