@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, Target, Users, Award, Phone, BarChart3, RefreshCw, AlertCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, Target, Users, Award, Phone, BarChart3, RefreshCw, AlertCircle, Calendar } from 'lucide-react';
 import Papa from 'papaparse';
 
 export default function SalesDashboard() {
@@ -8,17 +8,48 @@ export default function SalesDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState('octubre');
+  const [noDataForMonth, setNoDataForMonth] = useState(false);
 
-  // 🔥 URL CONFIGURADA PARA TU GOOGLE SHEET
-  // Sheet: "Octubre simplificado" (gid=1351719326)
-  const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1p9SXOZUmArwINrMUdOlmQrGc3BcMT4Zh6S-pIL8xxXc/export?format=csv&gid=1351719326';
+  // 🔥 CONFIGURACIÓN DE HOJAS POR MES
+  const SHEET_CONFIG = {
+    octubre: {
+      gid: '1351719326',
+      name: 'Octubre',
+      exists: true
+    },
+    noviembre: {
+      gid: 'PENDIENTE', // Cambiar cuando exista la hoja
+      name: 'Noviembre',
+      exists: false // Cambiar a true cuando exista
+    },
+    diciembre: {
+      gid: 'PENDIENTE', // Cambiar cuando exista la hoja
+      name: 'Diciembre',
+      exists: false // Cambiar a true cuando exista
+    }
+  };
+
+  const SHEET_ID = '1p9SXOZUmArwINrMUdOlmQrGc3BcMT4Zh6S-pIL8xxXc';
 
   // Función para cargar datos desde Google Sheets
-  const loadDataFromSheet = async () => {
+  const loadDataFromSheet = async (month) => {
     try {
       setLoading(true);
       setError(null);
+      setNoDataForMonth(false);
 
+      const monthConfig = SHEET_CONFIG[month];
+
+      // Verificar si la hoja existe
+      if (!monthConfig.exists) {
+        setNoDataForMonth(true);
+        setLoading(false);
+        setMetrics(null);
+        return;
+      }
+
+      const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${monthConfig.gid}`;
       const response = await fetch(SHEET_URL);
       
       if (!response.ok) {
@@ -34,11 +65,26 @@ export default function SalesDashboard() {
         dynamicTyping: true,
         complete: (results) => {
           if (results.data && results.data.length > 0) {
-            calculateMetrics(results.data, budget);
+            // Filtrar solo registros con campaña
+            const filteredData = results.data.filter(row => {
+              const campaign = row['Campaña'];
+              return campaign && campaign.trim() !== '';
+            });
+
+            if (filteredData.length === 0) {
+              setNoDataForMonth(true);
+              setLoading(false);
+              setMetrics(null);
+              return;
+            }
+
+            calculateMetrics(filteredData, budget);
             setLastUpdate(new Date());
             setLoading(false);
           } else {
-            throw new Error('No se encontraron datos en el Sheet');
+            setNoDataForMonth(true);
+            setLoading(false);
+            setMetrics(null);
           }
         },
         error: (error) => {
@@ -52,10 +98,10 @@ export default function SalesDashboard() {
     }
   };
 
-  // Cargar datos al iniciar
+  // Cargar datos al iniciar y cuando cambia el mes
   useEffect(() => {
-    loadDataFromSheet();
-  }, []);
+    loadDataFromSheet(selectedMonth);
+  }, [selectedMonth]);
 
   // Recalcular métricas cuando cambia el presupuesto
   useEffect(() => {
@@ -94,10 +140,10 @@ export default function SalesDashboard() {
     const cpl = totalLeads > 0 ? monthlyBudget / totalLeads : 0;
     const cplc = qualifiedLeads > 0 ? monthlyBudget / qualifiedLeads : 0;
 
-    // Ventas por campaña
+    // Ventas por campaña (ya filtrado sin "Sin campaña")
     const salesByCampaign = {};
     salesData.forEach(row => {
-      const campaign = row['Campaña'] || 'Sin campaña';
+      const campaign = row['Campaña'];
       if (!salesByCampaign[campaign]) {
         salesByCampaign[campaign] = {
           leads: 0,
@@ -107,7 +153,7 @@ export default function SalesDashboard() {
         };
       }
       salesByCampaign[campaign].leads += 1;
-      if (row['¿Cliente calificado?'] === 'Sí' || row['¿Cliente calificado?'] === 'SI') {
+      if (row['¿Lead calificado?'] === 'Sí' || row['¿Lead calificado?'] === 'SI') {
         salesByCampaign[campaign].qualified += 1;
       }
       if (row['¿Venta?'] === 'Sí' || row['¿Venta?'] === 'SI') {
@@ -149,7 +195,7 @@ export default function SalesDashboard() {
       salesByCampaign,
       salesByAdvisor,
       leadsBySource,
-      rawData: salesData // Guardar datos originales para recálculo
+      rawData: salesData
     });
   };
 
@@ -195,7 +241,7 @@ export default function SalesDashboard() {
             </ol>
           </div>
           <button
-            onClick={loadDataFromSheet}
+            onClick={() => loadDataFromSheet(selectedMonth)}
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2"
           >
             <RefreshCw className="w-5 h-5" />
@@ -206,17 +252,77 @@ export default function SalesDashboard() {
     );
   }
 
+  // No data for month state
+  if (noDataForMonth) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 p-8">
+        <div className="max-w-7xl mx-auto">
+          {/* Month Tabs */}
+          <div className="mb-8">
+            <div className="flex gap-2 bg-white rounded-xl shadow-lg p-2 border border-slate-200 inline-flex">
+              {Object.keys(SHEET_CONFIG).map((month) => (
+                <button
+                  key={month}
+                  onClick={() => setSelectedMonth(month)}
+                  className={`px-6 py-3 rounded-lg font-semibold transition capitalize ${
+                    selectedMonth === month
+                      ? 'bg-blue-600 text-white shadow-lg'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {SHEET_CONFIG[month].name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* No Data Message */}
+          <div className="flex items-center justify-center" style={{ minHeight: '60vh' }}>
+            <div className="bg-white rounded-2xl shadow-xl p-12 max-w-md w-full border-2 border-slate-200 text-center">
+              <Calendar className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-slate-800 mb-3">
+                {SHEET_CONFIG[selectedMonth].name}
+              </h2>
+              <p className="text-slate-600 text-lg">
+                Este mes aún no cuenta con información
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!metrics) return null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 p-8">
       <div className="max-w-7xl mx-auto">
+        {/* Month Tabs */}
+        <div className="mb-8">
+          <div className="flex gap-2 bg-white rounded-xl shadow-lg p-2 border border-slate-200 inline-flex">
+            {Object.keys(SHEET_CONFIG).map((month) => (
+              <button
+                key={month}
+                onClick={() => setSelectedMonth(month)}
+                className={`px-6 py-3 rounded-lg font-semibold transition capitalize ${
+                  selectedMonth === month
+                    ? 'bg-blue-600 text-white shadow-lg'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {SHEET_CONFIG[month].name}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Header */}
         <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-4xl font-bold text-slate-800 mb-2">Dashboard de Ventas</h1>
             <p className="text-slate-600">
-              Octubre 2024 • 
+              {SHEET_CONFIG[selectedMonth].name} 2024 • 
               {lastUpdate && (
                 <span className="ml-2">
                   Última actualización: {lastUpdate.toLocaleTimeString('es-PE')}
@@ -226,7 +332,7 @@ export default function SalesDashboard() {
           </div>
           <div className="flex items-center gap-4 flex-wrap">
             <button
-              onClick={loadDataFromSheet}
+              onClick={() => loadDataFromSheet(selectedMonth)}
               className="bg-white rounded-xl shadow-lg px-4 py-3 border-2 border-slate-200 hover:border-blue-300 transition flex items-center gap-2 text-slate-700 font-medium"
             >
               <RefreshCw className="w-5 h-5" />
@@ -464,26 +570,25 @@ export default function SalesDashboard() {
               </div>
               <div className="p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl border border-purple-200">
                 <div className="text-xs text-slate-600 mb-1 uppercase font-semibold">CPLC (Costo por Lead Calificado)</div>
-                <div className="text-2xl font-bold text-purple-700">{formatCurrency(metrics.cplc)}</div>
-                <div className="text-xs text-slate-500 mt-1">Presupuesto ÷ Leads Calificados</div>
-              </div>
-              <div className="p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl border border-emerald-200">
-                <div className="text-xs text-slate-600 mb-1 uppercase font-semibold">Presupuesto Total</div>
-                <div className="text-2xl font-bold text-emerald-700">{formatCurrency(budget)}</div>
-                <div className="text-xs text-slate-500 mt-1">Inversión del mes</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer Badge */}
-        <div className="text-center">
-          <div className="inline-flex items-center gap-2 bg-white rounded-full px-5 py-2.5 shadow-lg border border-slate-200">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="text-sm font-medium text-slate-700">Conectado a Google Sheets</span>
-          </div>
-        </div>
+<div className="text-2xl font-bold text-purple-700">{formatCurrency(metrics.cplc)}</div>
+<div className="text-xs text-slate-500 mt-1">Presupuesto ÷ Leads Calificados</div>
+</div>
+<div className="p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl border border-emerald-200">
+<div className="text-xs text-slate-600 mb-1 uppercase font-semibold">Presupuesto Total</div>
+<div className="text-2xl font-bold text-emerald-700">{formatCurrency(budget)}</div>
+<div className="text-xs text-slate-500 mt-1">Inversión del mes</div>
+</div>
+</div>
+</div>
+</div>
+    {/* Footer Badge */}
+    <div className="text-center">
+      <div className="inline-flex items-center gap-2 bg-white rounded-full px-5 py-2.5 shadow-lg border border-slate-200">
+        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+        <span className="text-sm font-medium text-slate-700">Conectado a Google Sheets</span>
       </div>
     </div>
-  );
+  </div>
+</div>
+);
 }
